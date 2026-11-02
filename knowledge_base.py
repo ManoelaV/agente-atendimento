@@ -6,6 +6,7 @@ expõe métodos de consulta usados pelo agente de atendimento.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from data_loader import load_all
@@ -69,30 +70,13 @@ class KnowledgeBase:
     # Consultas de produtos
     # ------------------------------------------------------------------ #
     def find_product(self, query: str) -> dict[str, str] | None:
-        """Busca um produto por ID ou por nome (contém palavras-chave)."""
+        """Busca um produto por ID ou por nome (contém)."""
         query = query.strip()
         if not query:
             return None
-        # Por ID exato
         prod = self._products_by_id.get(query)
         if prod:
             return prod
-        # Busca por palavras-chave no nome
-        q_words = [w for w in query.lower().split() if len(w) > 2]
-        category_words = {
-            "guitarra", "guitarras", "violão", "violao", "violões", "baixo",
-            "baixos", "bateria", "baterias", "teclado", "teclados", "piano",
-            "pian", "ukulele", "ukuleles", "saxofone", "saxofones", "trompete",
-            "trompetes", "violino", "violinos", "cordas", "orquestrais",
-            "sopro", "metais", "madeiras", "percusso", "percussao",
-        }
-        key_words = [w for w in q_words if w not in category_words]
-        if not key_words:
-            key_words = q_words
-        for name, prod in self._products_by_name.items():
-            if all(kw in name for kw in key_words):
-                return prod
-        # Fallback: correspondência simples (contém)
         q_lower = query.lower()
         for name, prod in self._products_by_name.items():
             if q_lower in name:
@@ -178,34 +162,26 @@ class KnowledgeBase:
         if items:
             msg += "Itens:\n"
             for it in items:
-                msg += f"• {it['quantity']}x {it['product_name']} ({it['unit_price']} cada)\n"
+                msg += f"• {it['quantity']}x {it['product_name']} (R$ {it['unit_price']} cada)\n"
         return msg.strip()
 
     # ------------------------------------------------------------------ #
     # Consultas de políticas (PDF)
     # ------------------------------------------------------------------ #
     def find_policy(self, keywords: list[str]) -> str | None:
-        """Retorna um trecho relevante do manual de políticas.
-
-        Procura a primeira palavra-chave no texto e devolve uma janela de
-        caracteres ao redor dela, garantindo que as demais palavras-chave
-        apareçam por perto.
-        """
-        if not self.policies_text or not keywords:
+        """Busca trechos do manual de políticas que contenham as palavras-chave."""
+        if not self.policies_text:
             return None
-        lower = self.policies_text.lower()
-        positions = []
-        for kw in keywords:
-            pos = lower.find(kw.lower())
-            if pos == -1:
-                return None
-            positions.append(pos)
-        # Janela em torno da primeira palavra-chave encontrada
-        first_pos = min(positions)
-        start = max(0, first_pos - 100)
-        end = min(len(self.policies_text), first_pos + 1800)
-        excerpt = self.policies_text[start:end].strip()
-        return excerpt
+        sections = [s.strip() for s in re.split(r"\n\s*\n", self.policies_text) if s.strip()]
+        matched: list[str] = []
+        for section in sections:
+            sec_lower = section.lower()
+            if all(kw.lower() in sec_lower for kw in keywords):
+                matched.append(section)
+        if not matched:
+            return None
+        result = "\n\n".join(matched[:3])
+        return result[:2000]
 
     def policy_summary(self, topic: str) -> str | None:
         """Retorna um resumo de política por tópico."""
@@ -242,7 +218,7 @@ class KnowledgeBase:
         msg += f"Situação no catálogo: {status}.\n"
         if promo:
             msg += (
-                f"🎁 Promoção ativa: {promo['description']} — "
+                f" Promoção ativa: {promo['description']} — "
                 f"{promo['discount_percent']}% de desconto.\n"
             )
         return msg.strip()

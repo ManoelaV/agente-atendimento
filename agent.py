@@ -20,14 +20,14 @@ class EmporioAgent:
 
     # Mensagens fixas da persona ------------------------------------------------
     GREETING = (
-        f"Olá! 👋 Sou o atendente virtual da *{NOME_LOJA}*.\n"
+        f"Olá! Sou o atendente virtual da *{NOME_LOJA}*.\n"
         "Como posso ajudar você hoje? Posso consultar preços e estoque de "
         "instrumentos, o status do seu pedido ou tirar dúvidas sobre nossas "
         "políticas (trocas, pagamentos, horário, garantia)."
     )
 
     UNKNOWN = (
-        "Desculpe, não entendi bem sua pergunta. 🤔\n"
+        "Desculpe, não entendi bem sua pergunta. \n"
         "Posso ajudar com informações sobre instrumentos musicais, pedidos, "
         "promoções e políticas da loja. Pode tentar reformular?"
     )
@@ -40,13 +40,13 @@ class EmporioAgent:
     )
 
     PRODUCT_NOT_FOUND = (
-        "Não encontrei esse instrumento no nosso catálogo. 🎸\n"
+        "Não encontrei esse instrumento no nosso catálogo. \n"
         "Pode confirmar o nome ou o código do produto? Caso contrário, "
         "posso sugerir categorias disponíveis."
     )
 
     ORDER_NOT_FOUND = (
-        "Não encontrei um pedido com esse número. 📦\n"
+        "Não encontrei um pedido com esse número. \n"
         "Confira o número do pedido e tente novamente."
     )
 
@@ -113,7 +113,7 @@ class EmporioAgent:
         if policy:
             return policy
         return (
-            "Não encontrei essa informação no manual de políticas. 📄\n"
+            "Não encontrei essa informação no manual de políticas. \n"
             "Pode detalhar sua dúvida? Se preferir, posso encaminhar para "
             "a equipe responsável."
         )

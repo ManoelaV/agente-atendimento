@@ -9,7 +9,7 @@ from agent import EmporioAgent
 
 def main() -> None:
     print("=" * 60)
-    print("🎵  Empório da Música - Agente de Atendimento (protótipo)")
+    print("  Empório da Música - Agente de Atendimento (protótipo)")
     print("=" * 60)
     print("Digite sua mensagem e pressione Enter.")
     print("Comandos: /sair, /exit, /quit, /ajuda, /help")
@@ -32,7 +32,7 @@ def main() -> None:
             break
 
         if user_input.lower() in {"/ajuda", "/help"}:
-            print("\n💡 Exemplos do que você pode perguntar:")
+            print("\n Exemplos do que você pode perguntar:")
             print("   • 'Qual o preço da guitarra Yamaha FG800?'")
             print("   • 'Tem violão Tagima em estoque?'")
             print("   • 'Qual o status do pedido #1?'")
