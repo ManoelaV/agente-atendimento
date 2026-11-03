@@ -10,6 +10,7 @@ usando regras baseadas em palavras-chave e expressões regulares.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -32,10 +33,34 @@ GREETING_KEYWORDS = [
 
 PRODUCT_KEYWORDS = [
     "produto", "preço", "preco", "valor", "custa", "custam", "quanto",
-    "disponível", "disponivel", "estoque", "tem", "vende", "venda",
-    "guitarra", "violão", "violao", "baixo", "bateria", "teclado",
-    "piano", "ukulele", "saxofone", "trompete", "violino", "corda",
+    "custando", "disponível", "disponivel", "disponíveis", "disponiveis",
+    "estoque", "tem", "vende", "venda", "orçamento", "orcamento",
+    "guitarra", "guitarras", "violão", "violao", "violões", "violoes",
+    "baixo", "baixos", "bateria", "baterias", "teclado", "teclados",
+    "piano", "pianos", "ukulele", "ukuleles", "saxofone", "trompete",
+    "violino", "corda",
 ]
+
+CATEGORY_ALIASES = {
+    "guitarra": "1",
+    "guitarras": "1",
+    "baixo": "2",
+    "baixos": "2",
+    "bateria": "3",
+    "baterias": "3",
+    "percussao": "3",
+    "percussão": "3",
+    "teclado": "4",
+    "teclados": "4",
+    "piano": "4",
+    "pianos": "4",
+    "violao": "5",
+    "violão": "5",
+    "violoes": "5",
+    "violões": "5",
+    "ukulele": "9",
+    "ukuleles": "9",
+}
 
 ORDER_KEYWORDS = [
     "pedido", "rastreio", "rastreamento", "entrega", "status",
@@ -49,6 +74,7 @@ POLICY_KEYWORDS = [
     "horario", "horário", "funcionamento", "abre", "fecha",
     "garantia", "frete", "privacidade", "lgpd", "desconto",
     "promocao", "promoção", "política", "politica",
+    "endereço", "endereco", "localização", "localizacao",
 ]
 
 # Termos que indicam fora de escopo (acessórios que a loja não vende)
@@ -62,7 +88,19 @@ ORDER_ID_RE = re.compile(r"(?:pedido|#|numero|número|ordem)?\s*#?\s*(\d{1,6})\b
 
 
 def _contains_any(text: str, keywords: list[str]) -> bool:
-    return any(kw in text for kw in keywords)
+    normalized = _normalize(text)
+    return any(
+        re.search(rf"(?<!\w){re.escape(_normalize(kw))}(?!\w)", normalized)
+        for kw in keywords
+    )
+
+
+def _normalize(text: str) -> str:
+    return "".join(
+        char
+        for char in unicodedata.normalize("NFKD", text.lower())
+        if not unicodedata.combining(char)
+    )
 
 
 def _extract_order_id(text: str) -> Optional[str]:
@@ -87,16 +125,39 @@ def _extract_topic(text: str) -> str:
         ("frete", ["frete", "entrega"]),
         ("privacidade", ["privacidade", "lgpd", "dados"]),
         ("desconto", ["desconto", "promocao", "promoção"]),
+        ("endereco", ["endereço", "endereco", "localização", "localizacao"]),
     ]
     for topic, kws in topic_map:
-        if any(kw in text for kw in kws):
+        if any(_normalize(kw) in text for kw in kws):
             return topic
+    return ""
+
+
+def _extract_max_price(text: str) -> str:
+    match = re.search(
+        r"(?:ate|custando ate|menos de|no maximo|maximo|orcamento de)"
+        r"\s*(?:r\$|\$)?\s*([\d.]+(?:,\d{1,2})?)",
+        text.lower(),
+    )
+    if not match:
+        return ""
+    value = match.group(1).replace(".", "").replace(",", ".")
+    try:
+        return str(float(value))
+    except ValueError:
+        return ""
+
+
+def _extract_category_id(text: str) -> str:
+    for alias, category_id in CATEGORY_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", text.lower()):
+            return category_id
     return ""
 
 
 def classify(text: str) -> Intent:
     """Classifica o texto do cliente e retorna um Intent."""
-    t = text.strip().lower()
+    t = _normalize(text.strip())
     if not t:
         return Intent("UNKNOWN", 0.0, {})
 
@@ -128,6 +189,12 @@ def classify(text: str) -> Intent:
     # Produto
     if _contains_any(t, PRODUCT_KEYWORDS):
         entities = {"query": _extract_product_query(text)}
+        max_price = _extract_max_price(t)
+        category_id = _extract_category_id(t)
+        if max_price:
+            entities["max_price"] = max_price
+        if category_id:
+            entities["category_id"] = category_id
         return Intent("PRODUCT_INFO", 0.8, entities)
 
     return Intent("UNKNOWN", 0.4, {})
@@ -143,7 +210,7 @@ def _extract_item_name(text: str) -> str:
 
 def _extract_product_query(text: str) -> str:
     """Extrai um termo de busca de produto a partir do texto."""
-    t = text.strip().lower()
+    t = _normalize(text.strip())
     # Remove pontuação
     t = re.sub(r"[^\w\sá-ú]", " ", t)
     # Remove palavras comuns que não são do produto
@@ -151,7 +218,10 @@ def _extract_product_query(text: str) -> str:
             "custam", "quanto", "tem", "disponível", "disponivel", "estoque",
             "vende", "venda", "produto", "de", "do", "da", "dos", "das",
             "em", "no", "na", "quer", "saber", "sobre", "me", "diga", "meu",
-            "minha", "informacoes", "informações", "detalhes"]
+            "minha", "informacoes", "informações", "detalhes", "quais",
+            "disponíveis", "disponiveis", "custando", "até", "ate",
+            "menos", "máximo", "maximo", "orçamento", "orcamento", "reais",
+            "r"]
     words = [w for w in t.split() if w not in stop and len(w) > 2]
     if words:
         return " ".join(words)

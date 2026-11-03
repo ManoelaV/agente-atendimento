@@ -63,3 +63,7 @@ class ConversationHistory:
     def clear(self) -> None:
         """Limpa o histórico."""
         self._write([])
+
+    def count(self) -> int:
+        """Retorna a quantidade de trocas armazenadas."""
+        return len(self._read())

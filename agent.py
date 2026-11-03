@@ -11,6 +11,7 @@ from typing import Optional
 from data_loader import load_all
 from intent_router import Intent, classify
 from knowledge_base import KnowledgeBase
+from ollama_client import OllamaClient
 
 
 class EmporioAgent:
@@ -56,8 +57,13 @@ class EmporioAgent:
         "Precisa de mais alguma coisa enquanto isso?"
     )
 
-    def __init__(self, kb: Optional[KnowledgeBase] = None):
+    def __init__(
+        self,
+        kb: Optional[KnowledgeBase] = None,
+        ollama_client: Optional[OllamaClient] = None,
+    ):
         self.kb = kb or KnowledgeBase()
+        self.ollama_client = ollama_client
 
     # ------------------------------------------------------------------ #
     def respond(self, text: str) -> str:
@@ -65,28 +71,56 @@ class EmporioAgent:
         intent = classify(text)
 
         if intent.name == "GREETING":
-            return self.GREETING
+            answer = self.GREETING
+        elif intent.name == "PRODUCT_INFO":
+            answer = self._handle_product(intent)
+        elif intent.name == "ORDER_STATUS":
+            answer = self._handle_order(intent)
+        elif intent.name == "POLICY":
+            answer = self._handle_policy(intent)
+        elif intent.name == "OUT_OF_SCOPE":
+            answer = self._handle_out_of_scope(intent)
+        else:
+            answer = (
+                "Não tenho certeza do que você precisa. Você pode informar "
+                "o nome do produto, o número do pedido ou o tema da política?"
+            )
 
-        if intent.name == "PRODUCT_INFO":
-            return self._handle_product(intent)
+        if self.ollama_client:
+            return self.ollama_client.generate(text, answer) or answer
+        return answer
 
-        if intent.name == "ORDER_STATUS":
-            return self._handle_order(intent)
+    def classify(self, text: str) -> Intent:
+        """Expose classification for diagnostics without changing responses."""
+        return classify(text)
 
-        if intent.name == "POLICY":
-            return self._handle_policy(intent)
-
-        if intent.name == "OUT_OF_SCOPE":
-            return self._handle_out_of_scope(intent)
-
-        return self.UNKNOWN
+    def status(self) -> dict[str, object]:
+        """Return runtime and knowledge-base diagnostics."""
+        return {
+            "mode": "ollama" if self.ollama_client else "deterministic",
+            "ollama_model": self.ollama_client.model if self.ollama_client else "",
+            **self.kb.status(),
+        }
 
     # ------------------------------------------------------------------ #
     # Handlers
     # ------------------------------------------------------------------ #
     def _handle_product(self, intent: Intent) -> str:
         query = intent.entities.get("query", "")
+        max_price_text = intent.entities.get("max_price", "")
+        category_id = intent.entities.get("category_id", "")
+        if max_price_text:
+            max_price = float(max_price_text) if max_price_text else None
+            products = self.kb.find_products(
+                query="",
+                max_price=max_price,
+                category_id=category_id,
+            )
+            return self.kb.product_list_message(products, max_price)
         product = self.kb.find_product(query) if query else None
+        if not product and category_id:
+            products = self.kb.find_products(query=query, category_id=category_id)
+            return self.kb.product_list_message(products)
         if not product:
             return self.PRODUCT_NOT_FOUND
         return self.kb.product_info_message(product)

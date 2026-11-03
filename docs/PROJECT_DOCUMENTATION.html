@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Empório da Música — Technical Project Documentation</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+body { font-family: Arial, sans-serif; color: #202124; line-height: 1.45; font-size: 10.5pt; }
+h1 { color: #17365d; font-size: 24pt; border-bottom: 2px solid #17365d; padding-bottom: 8px; }
+h2 { color: #1f4e79; font-size: 16pt; margin-top: 24px; }
+h3 { color: #1f4e79; font-size: 12pt; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; }
+th, td { border: 1px solid #b7c9d6; padding: 6px 8px; text-align: left; vertical-align: top; }
+th { background: #dce6f1; }
+code, pre { font-family: Consolas, monospace; }
+pre { background: #f3f5f7; border: 1px solid #d5dbe0; padding: 10px; white-space: pre-wrap; }
+blockquote { border-left: 4px solid #7f9db9; padding-left: 12px; color: #4d5963; }
+li { margin-bottom: 3px; }
+</style>
+</head>
+<body>
+<h1>Empório da Música</h1>
+<h2>Technical Project Documentation</h2>
+<p><strong>Document type:</strong> Prototype technical documentation<br>
+<strong>Application:</strong> Text-based customer service agent<br>
+<strong>Language of the application:</strong> Brazilian Portuguese<br>
+<strong>Data classification:</strong> Fictional demonstration data</p>
+
+<h2>1. Purpose and scope</h2>
+<p>Empório da Música is a local customer-service prototype for a fictional musical-instrument store. It provides grounded answers about the catalog, orders, promotions, and store policies through an interactive command-line interface.</p>
+<p>The project prioritizes predictable behavior without external services, answers grounded in local data, explicit intent routing, simple installation, and clear fallbacks. It is not a production commerce platform: it does not authenticate customers, connect to a real order-management system, or expose a web API.</p>
+
+<h2>2. Functional behavior</h2>
+<h3>Supported intents</h3>
+<table><tr><th>Intent</th><th>Example</th><th>Main source</th></tr>
+<tr><td><code>GREETING</code></td><td><code>oi</code></td><td>Fixed persona response</td></tr>
+<tr><td><code>PRODUCT_INFO</code></td><td><code>qual o preço da guitarra Yamaha FG800?</code></td><td>Product and promotion CSVs</td></tr>
+<tr><td><code>ORDER_STATUS</code></td><td><code>qual o status do pedido #1?</code></td><td>Orders, customers, order-items, and products CSVs</td></tr>
+<tr><td><code>POLICY</code></td><td><code>aceitam pix?</code></td><td>Store policy PDF</td></tr>
+<tr><td><code>OUT_OF_SCOPE</code></td><td><code>vocês vendem cabos?</code></td><td>Router keyword rules</td></tr>
+<tr><td><code>UNKNOWN</code></td><td>An unsupported or ambiguous question</td><td>Fixed fallback response</td></tr></table>
+<p>Product responses can return the name, price, description, stock, catalog status, and active promotion. Category and maximum-price filters are also supported, for example <code>quais violões custam até R$ 1.000?</code>; matching products are returned in ascending price order. Order responses can return the customer, status, total, tracking code, estimated delivery, and ordered products. Policy responses search text extracted from <code>data/políticas_da_loja.pdf</code>. Accessory keywords take priority over product classification to prevent invented availability results.</p>
+
+<h2>3. Technical architecture</h2>
+<pre>User
+  |
+  v
+cli.py
+  |
+  v
+agent.py
+  |
+  +--&gt; intent_router.py ------&gt; Intent + extracted entities
+  |
+  +--&gt; knowledge_base.py -----&gt; In-memory indexes and grounded lookup
+             |
+             v
+       data_loader.py
+          |        |
+          v        v
+        CSV files  Policy PDF</pre>
+<p><strong>Module responsibilities:</strong> <code>cli.py</code> handles the terminal; <code>agent.py</code> maps intents to handlers; <code>intent_router.py</code> classifies and extracts entities; <code>data_loader.py</code> reads CSV/PDF sources; <code>knowledge_base.py</code> indexes and formats results; <code>conversation_history.py</code> persists up to 100 exchanges; and <code>test_agent.py</code> provides smoke coverage.</p>
+
+<h2>4. Data flow</h2>
+<ol><li><code>KnowledgeBase</code> calls <code>load_all()</code> during agent initialization.</li><li>The loader reads six CSV files and extracts the policy PDF.</li><li>The knowledge base builds indexes by IDs, names, order items, and promotions.</li><li>Each message is classified before lookup.</li><li>The matching handler queries only relevant in-memory data.</li><li>The agent formats a Portuguese response or a specific fallback.</li></ol>
+
+<h2>5. Framework and agent approach</h2>
+<p>The project uses a deliberately small <strong>hybrid approach</strong>: deterministic intent classification and entity extraction, structured retrieval from CSV files, keyword-based retrieval from the policy PDF, deterministic response templates for reliable facts, and optional local LLM rewriting through Ollama.</p>
+<p>This approach was chosen over ReAct, function calling, and a SQL agent because the data set is small and known in advance. Explicit handlers make prices, stock, orders, and policies easier to audit and test.</p>
+
+<h2>6. Model and provider</h2>
+<p>The default provider is the local deterministic pipeline: no model, API key, network connection, or paid service is required. The optional provider is <strong>Ollama</strong>, accessed through its local HTTP endpoint. The default model is <code>llama3.2:latest</code>; it can be changed with <code>--ollama-model</code> or <code>OLLAMA_MODEL</code>. The endpoint defaults to <code>http://127.0.0.1:11434</code> and can be changed with <code>OLLAMA_URL</code>.</p>
+<p>The LLM is not the source of truth. It only rewrites an answer already grounded in local data. If Ollama is unavailable, the model fails, or a factual response is not safely preserved, the deterministic answer is returned.</p>
+
+<h2>7. Retrieval architecture and design choices</h2>
+<p>The implementation uses deterministic retrieval instead of a vector database because the dataset is small, local, and structured. This keeps price, stock, and order responses auditable and avoids arbitrary SQL or tool calls generated by a model. Structured records are indexed in memory by IDs and names. Policy text is extracted from the PDF and searched by topic keywords. Product category and maximum-price filters are applied directly to fields such as <code>category_id</code> and <code>price_brl</code>.</p>
+
+<h2>8. Prompt strategy</h2>
+<p>When <code>--ollama</code> is enabled, the prompt contains the customer's original question, the deterministic answer retrieved from local data, instructions to answer in Brazilian Portuguese, and an instruction not to add prices, addresses, policies, or availability not present in the grounded answer. The model has a wording role rather than a retrieval or database-query role, reducing hallucination risk and keeping local data authoritative.</p>
+
+<h2>9. Installation and execution</h2>
+<pre>python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python test_agent.py</pre>
+<p>The CSV files and policy PDF must remain in the <code>data/</code> directory.</p>
+<p>Run without Ollama:</p>
+<pre>python cli.py</pre>
+<p>To enable optional local Ollama response wording, start Ollama and run one of the following commands. The default model is <code>llama3.2:latest</code>; use <code>--ollama-model</code> to select another installed model. If the local service is unavailable, the deterministic response is retained.</p>
+<pre>python cli.py --ollama
+python cli.py --ollama --ollama-model gemma3:latest</pre>
+
+<h2>10. CLI usage</h2>
+<p>The CLI accepts free-text questions in Brazilian Portuguese and recognizes <code>/ajuda</code>, <code>/help</code>, <code>/historico</code>, <code>/limpar</code>, <code>/status</code>, <code>/debug &lt;question&gt;</code>, <code>/sair</code>, <code>/exit</code>, and <code>/quit</code>. The <code>--check</code> option validates that the required CSV tables and policy PDF are loaded without starting the interactive interface.</p>
+<pre>python cli.py --check</pre>
+
+<h2>11. Persistence and privacy considerations</h2>
+<p>Conversation history is written to <code>conversation_history.json</code> and limited to the latest 100 exchanges. Without authentication or user separation, this is suitable only for local demonstrations. Production use would require authenticated access, retention controls, encryption where appropriate, and a transactional store.</p>
+
+<h2>12. Technical trade-offs</h2>
+<h3>Deterministic routing instead of an autonomous agent</h3>
+<p>The data set is small and known in advance, so explicit handlers make answers auditable and reproducible. This reduces hallucinations and avoids arbitrary database queries. The trade-off is less flexibility with ambiguous or unforeseen wording.</p>
+<h3>Ollama instead of a hosted API</h3>
+<p>Ollama runs locally without credentials or per-request cost and keeps demonstration data on the local machine. The trade-off is dependence on local hardware and model availability.</p>
+<h3>CLI instead of a web UI</h3>
+<p>The challenge explicitly allows a CLI. It keeps the focus on agent behavior and retrieval quality and is easy to reproduce. The trade-off is a less polished end-user experience than a web interface.</p>
+<h3>JSON history instead of a database</h3>
+<p>JSON is dependency-free and appropriate for a single-user prototype. The trade-off is no multi-user isolation, transactions, or concurrent-write protection.</p>
+
+<h2>13. Testing strategy</h2>
+<p><code>test_agent.py</code> covers greetings, product, order, policy, out-of-scope, and unknown messages. Future tests should include malformed data, missing files, empty messages, ambiguous intents, unknown IDs, PDF extraction failures, and history write failures.</p>
+
+<h2>14. Known limitations and production considerations</h2>
+<p>The prototype omits authentication, real-time inventory and order integration, a web/API layer, concurrency-safe storage, semantic search, comprehensive automated tests, monitoring, and production-grade error reporting. Ollama response quality also depends on the selected local model and available hardware. These concerns should be addressed before production use.</p>
+
+<h2>15. Use of coding assistants</h2>
+<p><strong>Copilot SDK in VS Code</strong> was used as a development assistant. The workflow was to inspect the repository, reproduce behavior, investigate bugs, evaluate implementation options, apply focused changes, review the generated code manually, run tests and syntax checks, and organize the README and technical documentation. Copilot did not replace validation or design decisions; the implementation, tests, local Ollama behavior, and final documentation were checked in the repository environment.</p>
+
+<h2>16. Repository map</h2>
+<table><tr><th>Path</th><th>Responsibility</th></tr>
+<tr><td><code>agent.py</code></td><td>Agent orchestration and handlers</td></tr>
+<tr><td><code>cli.py</code></td><td>Interactive terminal interface</td></tr>
+<tr><td><code>data_loader.py</code></td><td>CSV and PDF loading</td></tr>
+<tr><td><code>knowledge_base.py</code></td><td>Normalization and lookups</td></tr>
+<tr><td><code>intent_router.py</code></td><td>Intent and entity extraction</td></tr>
+<tr><td><code>conversation_history.py</code></td><td>Local persistence</td></tr>
+<tr><td><code>data/</code></td><td>Fictional source data</td></tr>
+<tr><td><code>examples/</code></td><td>Example conversations</td></tr></table>
+
+<h2>17. Responsible use</h2>
+<p>All included customer, product, order, and policy information is fictional. Do not use this repository as a source of real customer decisions or as a substitute for authenticated operational systems.</p>
+</body>
+</html>
